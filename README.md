@@ -1,6 +1,42 @@
 [![GoDoc](https://godoc.org/github.com/tarm/serial?status.svg)](http://godoc.org/github.com/tarm/serial)
 [![Build Status](https://travis-ci.org/tarm/serial.svg?branch=master)](https://travis-ci.org/tarm/serial)
 
+=====================================================================
+
+## This fork: macOS arbitrary baud rate support
+
+Upstream `tarm/serial` hard-errors on macOS for any baud rate that isn't one of
+a fixed set of termios constants (tops out at 115200) — even though `serial_posix.go`
+already had a dead, commented-out `IOSSIOSPEED` implementation (the standard way
+to set arbitrary baud rates on Darwin) that was never finished or wired in.
+
+This fork finishes it: non-standard rates (e.g. `1000000`/1Mbaud, needed by some
+MCUboot bootloaders' serial DFU/recovery mode) now work correctly on macOS via
+[`IOSSIOSPEED`](https://developer.apple.com/library/archive/documentation/DeviceDrivers/Conceptual/WritingDeviceDriver/SpecialConsid/SpecialConsid.html),
+instead of failing immediately with `Unknown baud rate`.
+
+### Using this fork
+
+Add a `replace` directive to your project's `go.mod`:
+
+```
+replace github.com/tarm/serial => github.com/Bedmonds91/tarm-serial-fork v0.0.1
+```
+
+This is a drop-in replacement — no API changes, only `openPort()`'s internal
+behavior on macOS/Darwin is affected. Linux and Windows are unchanged.
+
+### Why this exists
+
+`tarm/serial` appears unmaintained (no recent commits), so tools built on it —
+like [newtmgr](https://github.com/apache/mynewt-newtmgr) and
+[mcumgr](https://github.com/apache/mynewt-mcumgr-cli) — inherit this limitation.
+If you hit `Unknown baud rate` on macOS with either of those tools, this fork
+(via a `replace` directive) fixes it without waiting on upstream.
+
+=====================================================================
+
+
 Serial
 ========
 A Go package to allow you to read and write from the
