@@ -14,8 +14,13 @@ import (
 	"os"
 	"syscall"
 	"time"
-	//"unsafe"
+	"unsafe"
 )
+
+// IOSSIOSPEED lets Darwin set an arbitrary baud rate, bypassing the fixed set of
+// constants termios' cfsetispeed/cfsetospeed support (which tops out at B115200
+// on macOS). Value from <IOKit/serial/ioss.h>.
+const iossiospeed = 0x80045402
 
 func openPort(name string, baud int, databits byte, parity Parity, stopbits StopBits, readTimeout time.Duration) (p *Port, err error) {
 	f, err := os.OpenFile(name, syscall.O_RDWR|syscall.O_NOCTTY|syscall.O_NONBLOCK, 0666)
@@ -36,6 +41,7 @@ func openPort(name string, baud int, databits byte, parity Parity, stopbits Stop
 		return nil, err
 	}
 	var speed C.speed_t
+	customBaud := false
 	switch baud {
 	case 115200:
 		speed = C.B115200
@@ -70,8 +76,12 @@ func openPort(name string, baud int, databits byte, parity Parity, stopbits Stop
 	case 50:
 		speed = C.B50
 	default:
-		f.Close()
-		return nil, fmt.Errorf("Unknown baud rate %v", baud)
+		// Not one of the fixed termios constants (e.g. 1000000) — set up the port
+		// with a placeholder standard rate here, then override it via IOSSIOSPEED
+		// below once the rest of termios is configured. cfsetispeed/cfsetospeed
+		// still need *some* valid C.speed_t even though this value gets replaced.
+		speed = C.B9600
+		customBaud = true
 	}
 
 	_, err = C.cfsetispeed(&st, speed)
@@ -156,17 +166,20 @@ func openPort(name string, baud int, databits byte, parity Parity, stopbits Stop
 		return nil, errors.New(s)
 	}
 
-	/*
-				r1, _, e = syscall.Syscall(syscall.SYS_IOCTL,
-			                uintptr(f.Fd()),
-			                uintptr(0x80045402), // IOSSIOSPEED
-			                uintptr(unsafe.Pointer(&baud)));
-			        if e != 0 || r1 != 0 {
-			                s := fmt.Sprint("Baudrate syscall error:", e, r1)
-					f.Close()
-		                        return nil, os.NewError(s)
-				}
-	*/
+	if customBaud {
+		// speed_t on Darwin is `unsigned long` (8 bytes on 64-bit) — use a fixed-size
+		// local rather than passing &baud (a Go int) directly, so the pointed-to size
+		// always matches what the kernel expects regardless of Go's own int width.
+		baudSpeed := uint64(baud)
+		r1, _, e = syscall.Syscall(syscall.SYS_IOCTL,
+			uintptr(f.Fd()),
+			uintptr(iossiospeed),
+			uintptr(unsafe.Pointer(&baudSpeed)))
+		if e != 0 || r1 != 0 {
+			f.Close()
+			return nil, fmt.Errorf("IOSSIOSPEED (baud=%d) syscall error: %v", baud, e)
+		}
+	}
 
 	return &Port{f: f}, nil
 }
