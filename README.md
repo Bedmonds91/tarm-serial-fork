@@ -34,6 +34,45 @@ like [newtmgr](https://github.com/apache/mynewt-newtmgr) and
 If you hit `Unknown baud rate` on macOS with either of those tools, this fork
 (via a `replace` directive) fixes it without waiting on upstream.
 
+### Quick start: building newtmgr with this fix
+
+```sh
+# 1. Clone newtmgr
+git clone https://github.com/apache/mynewt-newtmgr.git
+cd mynewt-newtmgr
+
+# 2. Point it at this fork instead of the stock tarm/serial
+go mod edit -replace github.com/tarm/serial=github.com/Bedmonds91/tarm-serial-fork@v0.0.1
+go mod tidy
+
+# 3. Build
+go build -o newtmgr ./newtmgr
+
+# 4. Install and put it on your PATH
+mkdir -p ~/go/bin
+mv newtmgr ~/go/bin/
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# 5. macOS Gatekeeper will kill a freshly-built, ad-hoc-signed Go binary on
+#    first run with no useful error — this isn't specific to newtmgr or this
+#    fork, it happens to any locally-built Go binary on macOS. Re-sign it:
+codesign --sign - --force --deep ~/go/bin/newtmgr
+
+# 6. Verify
+newtmgr version
+```
+
+Then connect at whatever baud rate you need:
+
+```sh
+ls /dev/tty.*   # find your device
+newtmgr --conntype serial --connstring "dev=/dev/tty.usbserial-XXX,baud=1000000" image upload path/to/firmware.bin
+```
+
+The same steps apply to [mcumgr](https://github.com/apache/mynewt-mcumgr-cli) —
+just swap the repo URL and build target in step 1/3.
+
 =====================================================================
 
 
